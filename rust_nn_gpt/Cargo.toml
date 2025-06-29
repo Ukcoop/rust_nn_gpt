@@ -1,0 +1,27 @@
+[package]
+name = "rust_nn_gpt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wgpu = "25.0"
+bytemuck = { version = "1.14", features = ["derive"] }
+futures = "0.3"
+futures-intrusive = "0.5"
+rand = "0.8"
+rand_distr = "0.4"
+
+[lints.clippy]
+needless_return = "allow"
+needless_range_loop = "allow"
+
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+redundant_clone = "deny"
+implicit_clone = "deny"
+cloned_instead_of_copied = "deny"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
