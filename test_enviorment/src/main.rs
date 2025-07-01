@@ -1,37 +1,36 @@
-use rust_nn_gpt::transformer::{Transformer, TransformerBackend, TransformerConfig};
+use rand::Rng;
+use rust_nn_gpt::transformer::{Transformer, TransformerConfig};
 
-#[tokio::main]
-async fn main() {
-    // Select backend: TransformerBackend::Cpu or TransformerBackend::Gpu
-    let backend = TransformerBackend::Auto; // Automatically select GPU if available, otherwise CPU
-    // let backend = TransformerBackend::Gpu; // Uncomment to test GPU (will panic on unimplemented)
-
-    // Define model config for a larger model
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = TransformerConfig {
-        input_dim: 8,
-        output_dim: 8,
-        height: 8,
-        layers: 4,
-        learning_rate: 0.1,
+        input_dim: 32,
+        model_dim: 64,
+        output_dim: 32,
+        num_heads: 2,
+        num_layers: 4,
     };
-
-    let mut transformer = match Transformer::new(backend, config.clone()).await {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("Failed to initialize transformer: {}", e);
-            return;
-        }
-    };
-
-    let input = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0];
-    let target = vec![0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0];
-    let epochs = 1000;
-
-    for epoch in 0..epochs {
-        let loss = transformer.train(input.clone(), target.clone());
-        println!("Epoch {}: Loss = {}", epoch + 1, loss);
+    let mut rng = rand::thread_rng();
+    let batch_size = 64;
+    let mut inputs: Vec<Vec<f32>> = (0..batch_size)
+        .map(|_| {
+            (0..config.input_dim)
+                .map(|_| rng.gen_range(-1.0..1.0))
+                .collect()
+        })
+        .collect();
+    let mut targets: Vec<Vec<f32>> = (0..batch_size)
+        .map(|_| {
+            (0..config.output_dim)
+                .map(|_| rng.gen_range(-10.0..10.0))
+                .collect()
+        })
+        .collect();
+    // Create Transformer
+    let mut transformer = Transformer::new(config);
+    // Training loop
+    for epoch in 0..1000 {
+        let loss = transformer.train(&inputs, &targets)?;
+        println!("Epoch {}: loss = {}", epoch, loss);
     }
-
-    let prediction = transformer.predict(input);
-    println!("Final Prediction: {:?}", prediction);
+    Ok(())
 }
