@@ -1,5 +1,7 @@
 use super::{FeedForward, LayerNorm, MultiHeadAttention};
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct TransformerBlock {
     pub attn: MultiHeadAttention,
     pub norm1: LayerNorm,
@@ -18,12 +20,26 @@ impl TransformerBlock {
     }
 
     pub fn forward(&mut self, x: &[Vec<f32>]) -> Vec<Vec<f32>> {
-        // Bypass attention block
-        let x1: Vec<Vec<f32>> = x.to_vec();
-        let x1: Vec<Vec<f32>> = x1.iter().map(|row| self.norm1.forward(row)).collect();
-        // Feed-forward without residual + norm
-        let ff_out: Vec<Vec<f32>> = x1.iter().map(|row| self.ff.forward(row)).collect();
-        ff_out.iter().map(|row| self.norm2.forward(row)).collect()
+        // Standard transformer block: residual + norm + attn + residual + norm + ff
+        let mut out = Vec::with_capacity(x.len());
+        for row in x.iter() {
+            let normed = self.norm1.forward(row);
+            let attn_out = self.attn.forward(&[normed]);
+            let attn_res = row
+                .iter()
+                .zip(attn_out[0].iter())
+                .map(|(a, b)| a + b)
+                .collect::<Vec<_>>();
+            let normed2 = self.norm2.forward(&attn_res);
+            let ff_out = self.ff.forward(&normed2);
+            let ff_res = attn_res
+                .iter()
+                .zip(ff_out.iter())
+                .map(|(a, b)| a + b)
+                .collect();
+            out.push(ff_res);
+        }
+        out
     }
 
     pub fn zero_grad(&mut self) {
@@ -54,9 +70,24 @@ impl TransformerBlock {
         &mut self,
         grad_output: &[f32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let grad_norm2 = self.norm2.backward(grad_output)?;
-        let grad_ff = self.ff.backward(&grad_norm2)?;
-        let grad_norm1 = self.norm1.backward(&grad_ff)?;
+        // Backward through second residual (ff)
+        let grad_ff = grad_output;
+        let grad_ff_out = self.ff.backward(grad_ff)?;
+        // Residual connection: grad flows to both ff_out and attn_res
+        let grad_attn_res: Vec<f32> = grad_output
+            .iter()
+            .zip(grad_ff_out.iter())
+            .map(|(g1, g2)| g1 + g2)
+            .collect();
+        let grad_norm2 = self.norm2.backward(&grad_attn_res)?;
+        // Backward through first residual (attn)
+        let grad_attn_out = self.attn.backward(&grad_norm2)?;
+        let grad_input: Vec<f32> = grad_norm2
+            .iter()
+            .zip(grad_attn_out.iter())
+            .map(|(g1, g2)| g1 + g2)
+            .collect();
+        let grad_norm1 = self.norm1.backward(&grad_input)?;
         Ok(grad_norm1)
     }
 
@@ -69,9 +100,20 @@ impl TransformerBlock {
 
     /// Forward for a single vector (for vector-to-vector transformer)
     pub fn forward_vec(&mut self, x: &[f32]) -> Vec<f32> {
-        let x1 = self.norm1.forward(x);
-        let ff_out = self.ff.forward(&x1);
-        self.norm2.forward(&ff_out)
+        let normed = self.norm1.forward(x);
+        let attn_out = self.attn.forward(&[normed]);
+        let attn_res: Vec<f32> = x
+            .iter()
+            .zip(attn_out[0].iter())
+            .map(|(a, b)| a + b)
+            .collect();
+        let normed2 = self.norm2.forward(&attn_res);
+        let ff_out = self.ff.forward(&normed2);
+        attn_res
+            .iter()
+            .zip(ff_out.iter())
+            .map(|(a, b)| a + b)
+            .collect()
     }
 
     /// Backward for a single vector (for vector-to-vector transformer)
@@ -79,9 +121,24 @@ impl TransformerBlock {
         &mut self,
         grad_output: &[f32],
     ) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-        let grad_norm2 = self.norm2.backward(grad_output)?;
-        let grad_ff = self.ff.backward(&grad_norm2)?;
-        let grad_norm1 = self.norm1.backward(&grad_ff)?;
+        // Backward through second residual (ff)
+        let grad_ff = grad_output;
+        let grad_ff_out = self.ff.backward(grad_ff)?;
+        // Residual connection: grad flows to both ff_out and attn_res
+        let grad_attn_res: Vec<f32> = grad_output
+            .iter()
+            .zip(grad_ff_out.iter())
+            .map(|(g1, g2)| g1 + g2)
+            .collect();
+        let grad_norm2 = self.norm2.backward(&grad_attn_res)?;
+        // Backward through first residual (attn)
+        let grad_attn_out = self.attn.backward(&grad_norm2)?;
+        let grad_input: Vec<f32> = grad_norm2
+            .iter()
+            .zip(grad_attn_out.iter())
+            .map(|(g1, g2)| g1 + g2)
+            .collect();
+        let grad_norm1 = self.norm1.backward(&grad_input)?;
         Ok(grad_norm1)
     }
 }

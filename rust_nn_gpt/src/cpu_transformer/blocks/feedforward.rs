@@ -1,10 +1,14 @@
 use super::linear::Linear;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct FeedForward {
     pub linear1: Linear,
     pub linear2: Linear,
+    #[serde(skip)]
     pub last_input: Option<Vec<f32>>,
+    #[serde(skip)]
     pub last_relu: Option<Vec<f32>>,
 }
 

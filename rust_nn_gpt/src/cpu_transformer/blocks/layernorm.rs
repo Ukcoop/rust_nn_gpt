@@ -1,5 +1,7 @@
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct LayerNorm {
     pub gamma: Vec<f32>, // scale
     pub beta: Vec<f32>,  // shift
@@ -12,7 +14,9 @@ pub struct LayerNorm {
     pub m_beta: Vec<f32>,
     pub v_beta: Vec<f32>,
     pub t: usize,
+    #[serde(skip)]
     pub last_input: Option<Vec<f32>>,
+    #[serde(skip)]
     pub last_norm: Option<Vec<f32>>,
 }
 

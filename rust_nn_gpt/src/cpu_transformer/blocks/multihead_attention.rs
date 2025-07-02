@@ -1,5 +1,6 @@
 use super::linear::Linear;
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
 fn softmax(xs: &[f32]) -> Vec<f32> {
     let max = xs.iter().copied().fold(f32::NEG_INFINITY, f32::max);
@@ -15,6 +16,7 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 type HeadResult2 = (Vec<Vec<f32>>, Vec<Vec<f32>>);
 type HeadResult3 = (Vec<Vec<f32>>, Vec<Vec<f32>>, Vec<Vec<f32>>);
 
+#[derive(Serialize, Deserialize)]
 pub struct MultiHeadAttention {
     pub num_heads: usize,
     pub head_dim: usize,
@@ -22,12 +24,17 @@ pub struct MultiHeadAttention {
     pub w_k: Linear,
     pub w_v: Linear,
     pub w_o: Linear,
-    // For backward
+    #[serde(skip)]
     pub last_input: Option<Vec<Vec<f32>>>,
+    #[serde(skip)]
     pub last_q: Option<Vec<Vec<f32>>>,
+    #[serde(skip)]
     pub last_k: Option<Vec<Vec<f32>>>,
+    #[serde(skip)]
     pub last_v: Option<Vec<Vec<f32>>>,
-    pub last_attn_weights: Option<Vec<Vec<Vec<f32>>>>, // [head][seq][seq]
+    #[serde(skip)]
+    pub last_attn_weights: Option<Vec<Vec<Vec<f32>>>>,
+    #[serde(skip)]
     pub last_heads_out: Option<Vec<Vec<f32>>>,
 }
 

@@ -1,7 +1,9 @@
 use rand::Rng;
 use rand::distributions::{Distribution, Uniform};
 use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize)]
 pub struct Linear {
     pub weight: Vec<Vec<f32>>, // shape: [out_dim][in_dim]
     pub bias: Vec<f32>,        // shape: [out_dim]
