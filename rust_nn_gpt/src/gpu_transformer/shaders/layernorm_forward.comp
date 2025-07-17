@@ -1,0 +1,61 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+// Input buffer
+layout(set = 0, binding = 0) buffer InputBuffer { float input_data[]; };
+
+// Parameter buffers
+layout(set = 0, binding = 1) buffer GammaBuffer { float gamma[]; };
+layout(set = 0, binding = 2) buffer BetaBuffer { float beta[]; };
+
+// Output buffer
+layout(set = 0, binding = 3) buffer OutputBuffer { float output_data[]; };
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint feature_dim;
+    uint batch_size;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    uint total_elements = pc.batch_size * pc.feature_dim;
+    const float epsilon = 1e-5;
+    
+    // Bounds check
+    if (global_id >= total_elements) {
+        return;
+    }
+    
+    // Calculate batch index and feature index
+    uint batch_idx = global_id / pc.feature_dim;
+    uint feature_idx = global_id % pc.feature_dim;
+    
+    // Additional bounds check
+    if (batch_idx >= pc.batch_size || feature_idx >= pc.feature_dim) {
+        return;
+    }
+    
+    // Calculate mean for this batch element
+    float sum = 0.0;
+    for (uint i = 0; i < pc.feature_dim; i++) {
+        uint input_idx = batch_idx * pc.feature_dim + i;
+        sum += input_data[input_idx];
+    }
+    float mean = sum / float(pc.feature_dim);
+    
+    // Calculate variance for this batch element
+    float var_sum = 0.0;
+    for (uint i = 0; i < pc.feature_dim; i++) {
+        uint input_idx = batch_idx * pc.feature_dim + i;
+        float diff = input_data[input_idx] - mean;
+        var_sum += diff * diff;
+    }
+    float variance = var_sum / float(pc.feature_dim);
+    
+    // Normalize and apply gamma/beta
+    uint input_idx = batch_idx * pc.feature_dim + feature_idx;
+    float normalized = (input_data[input_idx] - mean) / sqrt(variance + epsilon);
+    output_data[global_id] = gamma[feature_idx] * normalized + beta[feature_idx];
+} 

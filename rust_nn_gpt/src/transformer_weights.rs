@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct TransformerWeights {
@@ -94,4 +94,4 @@ pub struct BlockWeights {
     pub ff_linear2_m_bias: Vec<f32>,
     pub ff_linear2_v_bias: Vec<f32>,
     pub ff_linear2_t: usize,
-} 
+}

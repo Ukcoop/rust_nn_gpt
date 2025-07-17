@@ -1,0 +1,46 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer QBuffer { float q[]; };
+layout(set = 0, binding = 1) buffer KBuffer { float k[]; };
+layout(set = 0, binding = 2) buffer ScoresBuffer { float scores[]; };
+
+layout(push_constant) uniform PushConstants {
+    uint batch_size;
+    uint seq_len;
+    uint num_heads;
+    uint head_dim;
+    uint embed_dim;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Calculate indices
+    uint total_attention_scores = pc.batch_size * pc.num_heads * pc.seq_len * pc.seq_len;
+    if (global_id >= total_attention_scores) return;
+    
+    uint score_idx = global_id;
+    uint batch = score_idx / (pc.num_heads * pc.seq_len * pc.seq_len);
+    uint remaining = score_idx % (pc.num_heads * pc.seq_len * pc.seq_len);
+    uint head = remaining / (pc.seq_len * pc.seq_len);
+    uint i = (remaining % (pc.seq_len * pc.seq_len)) / pc.seq_len;  // query position
+    uint j = remaining % pc.seq_len;  // key position
+    
+    // Calculate offsets for Q and K
+    uint q_offset = batch * pc.seq_len * pc.embed_dim + i * pc.embed_dim + head * pc.head_dim;
+    uint k_offset = batch * pc.seq_len * pc.embed_dim + j * pc.embed_dim + head * pc.head_dim;
+    
+    // Compute dot product
+    float dot_product = 0.0;
+    for (uint d = 0; d < pc.head_dim; d++) {
+        dot_product += q[q_offset + d] * k[k_offset + d];
+    }
+    
+    // Scale by sqrt(head_dim)
+    float score = dot_product / sqrt(float(pc.head_dim));
+    
+    // Store the attention score
+    scores[score_idx] = score;
+} 

@@ -1,0 +1,79 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer GradOutputBuffer { float grad_output[]; };
+layout(set = 0, binding = 1) buffer InputDataBuffer { float input_data[]; };
+layout(set = 0, binding = 2) buffer GammaBuffer { float gamma[]; };
+layout(set = 0, binding = 3) buffer BetaBuffer { float beta[]; };
+layout(set = 0, binding = 4) buffer GradInputBuffer { float grad_input[]; };
+layout(set = 0, binding = 5) buffer GradGammaBuffer { float grad_gamma[]; };
+layout(set = 0, binding = 6) buffer GradBetaBuffer { float grad_beta[]; };
+
+layout(push_constant) uniform PushConstants {
+    uint batch_size;
+    uint seq_len;
+    uint hidden_dim;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Calculate indices for output gradients
+    uint total_elements = pc.batch_size * pc.seq_len * pc.hidden_dim;
+    if (global_id >= total_elements) return;
+    
+    uint element_idx = global_id;
+    uint batch = element_idx / (pc.seq_len * pc.hidden_dim);
+    uint seq = (element_idx % (pc.seq_len * pc.hidden_dim)) / pc.hidden_dim;
+    uint dim = element_idx % pc.hidden_dim;
+    
+    // Get gradient of output
+    float grad_output_val = grad_output[element_idx];
+    
+    // Compute mean and variance for this sequence position
+    float mean = 0.0;
+    float variance = 0.0;
+    
+    // First pass: compute mean
+    for (uint d = 0; d < pc.hidden_dim; d++) {
+        uint idx = batch * pc.seq_len * pc.hidden_dim + seq * pc.hidden_dim + d;
+        mean += input_data[idx];
+    }
+    mean /= float(pc.hidden_dim);
+    
+    // Second pass: compute variance
+    for (uint d = 0; d < pc.hidden_dim; d++) {
+        uint idx = batch * pc.seq_len * pc.hidden_dim + seq * pc.hidden_dim + d;
+        float diff = input_data[idx] - mean;
+        variance += diff * diff;
+    }
+    variance /= float(pc.hidden_dim);
+    
+    // Compute normalized value
+    float normalized_val = (input_data[element_idx] - mean) / sqrt(variance + 1e-5);
+    
+    // Compute gradients
+    // ∂L/∂gamma[dim] = ∂L/∂output[batch,seq,dim] * normalized[batch,seq,dim]
+    // ∂L/∂beta[dim] = ∂L/∂output[batch,seq,dim]
+    // ∂L/∂input[batch,seq,dim] = ∂L/∂output[batch,seq,dim] * gamma[dim] * ∂normalized/∂input
+    
+    // Gradient for gamma
+    atomicAdd(grad_gamma[dim], grad_output_val * normalized_val);
+    
+    // Gradient for beta
+    atomicAdd(grad_beta[dim], grad_output_val);
+    
+    // Gradient for input
+    float gamma_val = gamma[dim];
+    float std_dev = sqrt(variance + 1e-5);
+    float n = float(pc.hidden_dim);
+    
+    // ∂normalized/∂input = (1 - 1/n) / std_dev - (input - mean) * (input - mean) / (n * std_dev^3)
+    float grad_normalized_wrt_input = (1.0 - 1.0/n) / std_dev - 
+                                     (input_data[element_idx] - mean) * (input_data[element_idx] - mean) / (n * std_dev * std_dev * std_dev);
+    
+    float grad_input_val = grad_output_val * gamma_val * grad_normalized_wrt_input;
+    atomicAdd(grad_input[element_idx], grad_input_val);
+} 

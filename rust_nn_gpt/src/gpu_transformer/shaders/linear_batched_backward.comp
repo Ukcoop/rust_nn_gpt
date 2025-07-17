@@ -1,0 +1,39 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+// Input buffers
+layout(set = 0, binding = 0) buffer InputBuffer { float input_data[]; };
+layout(set = 0, binding = 1) buffer WeightBuffer { float weights[]; };
+layout(set = 0, binding = 2) buffer BiasBuffer { float bias[]; };
+layout(set = 0, binding = 3) buffer OutputGradBuffer { float output_grad[]; };
+
+// Output buffers
+layout(set = 0, binding = 4) buffer InputGradBuffer { float input_grad[]; };
+layout(set = 0, binding = 5) buffer WeightGradBuffer { float weight_grad[]; };
+layout(set = 0, binding = 6) buffer BiasGradBuffer { float bias_grad[]; };
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint input_size;
+    uint output_size;
+    uint batch_size;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Only compute bias gradients for now
+    if (global_id < pc.output_size) {
+        bias_grad[global_id] = output_grad[global_id];
+    }
+    
+    // Set dummy values for other gradients
+    if (global_id < pc.input_size) {
+        input_grad[global_id] = 0.001f;
+    }
+    
+    if (global_id < pc.input_size * pc.output_size) {
+        weight_grad[global_id] = 0.001f;
+    }
+} 

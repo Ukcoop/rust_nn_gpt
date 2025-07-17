@@ -1,0 +1,51 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer SoftmaxBuffer { float softmax[]; };
+layout(set = 0, binding = 1) buffer VBuffer { float v[]; };
+layout(set = 0, binding = 2) buffer AttnOutBuffer { float attn_out[]; };
+
+layout(push_constant) uniform PushConstants {
+    uint batch_size;
+    uint seq_len;
+    uint num_heads;
+    uint head_dim;
+    uint embed_dim;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Calculate indices for output
+    uint total_output_elements = pc.batch_size * pc.num_heads * pc.seq_len * pc.head_dim;
+    if (global_id >= total_output_elements) return;
+    
+    uint output_idx = global_id;
+    uint batch = output_idx / (pc.num_heads * pc.seq_len * pc.head_dim);
+    uint remaining = output_idx % (pc.num_heads * pc.seq_len * pc.head_dim);
+    uint head = remaining / (pc.seq_len * pc.head_dim);
+    uint i = (remaining % (pc.seq_len * pc.head_dim)) / pc.head_dim;  // query position
+    uint d = remaining % pc.head_dim;  // head dimension
+    
+    // Compute weighted sum of values
+    float weighted_sum = 0.0;
+    for (uint j = 0; j < pc.seq_len; j++) {
+        // Get attention weight for this query-key pair
+        uint weight_idx = batch * pc.num_heads * pc.seq_len * pc.seq_len + 
+                         head * pc.seq_len * pc.seq_len + 
+                         i * pc.seq_len + j;
+        float attention_weight = softmax[weight_idx];
+        
+        // Get value for this key position
+        uint v_offset = batch * pc.seq_len * pc.embed_dim + 
+                       j * pc.embed_dim + 
+                       head * pc.head_dim + d;
+        float value = v[v_offset];
+        
+        weighted_sum += attention_weight * value;
+    }
+    
+    // Store the output
+    attn_out[output_idx] = weighted_sum;
+} 

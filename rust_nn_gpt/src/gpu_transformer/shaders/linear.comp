@@ -1,0 +1,50 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+// Input buffer: input vector
+layout(set = 0, binding = 0) buffer InputBuffer {
+    float input_data[];
+};
+
+// Weights buffer: weight matrix (transposed)
+layout(set = 0, binding = 1) buffer WeightsBuffer {
+    float weights[];
+};
+
+// Bias buffer: bias vector
+layout(set = 0, binding = 2) buffer BiasBuffer {
+    float bias[];
+};
+
+// Output buffer: output vector
+layout(set = 0, binding = 3) buffer OutputBuffer {
+    float output_data[];
+};
+
+// Push constants for dimensions
+layout(push_constant) uniform PushConstants {
+    uint input_size;
+    uint output_size;
+} pc;
+
+void main() {
+    uint output_idx = gl_GlobalInvocationID.x;
+    
+    // Check bounds
+    if (output_idx >= pc.output_size) {
+        return;
+    }
+    
+    // Initialize output with bias
+    float result = bias[output_idx];
+    
+    // Matrix multiplication: output = input * weights^T + bias
+    for (uint input_idx = 0; input_idx < pc.input_size; input_idx++) {
+        uint weight_idx = output_idx * pc.input_size + input_idx;
+        result += input_data[input_idx] * weights[weight_idx];
+    }
+    
+    // Store result
+    output_data[output_idx] = result;
+} 

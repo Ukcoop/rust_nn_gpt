@@ -1,11 +1,11 @@
 pub mod blocks;
 
 use crate::transformer::TransformerConfig;
+use crate::transformer_weights::{BlockWeights, TransformerWeights};
 use blocks::{LayerNorm, Linear, TransformerBlock};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use crate::transformer_weights::{TransformerWeights, BlockWeights};
 
 #[derive(Serialize, Deserialize)]
 pub struct CpuTransformer {
@@ -221,8 +221,10 @@ impl From<&CpuTransformer> for TransformerWeights {
             input_norm_m_beta: cpu.input_norm.m_beta.clone(),
             input_norm_v_beta: cpu.input_norm.v_beta.clone(),
             input_norm_t: cpu.input_norm.t,
-            blocks: cpu.blocks.iter().map(|block| {
-                BlockWeights {
+            blocks: cpu
+                .blocks
+                .iter()
+                .map(|block| BlockWeights {
                     attn_wq_weight: block.attn.w_q.weight.clone(),
                     attn_wq_bias: block.attn.w_q.bias.clone(),
                     attn_wq_m_weight: block.attn.w_q.m_weight.clone(),
@@ -279,8 +281,8 @@ impl From<&CpuTransformer> for TransformerWeights {
                     ff_linear2_m_bias: block.ff.linear2.m_bias.clone(),
                     ff_linear2_v_bias: block.ff.linear2.v_bias.clone(),
                     ff_linear2_t: block.ff.linear2.t,
-                }
-            }).collect(),
+                })
+                .collect(),
             output_norm_gamma: cpu.output_norm.gamma.clone(),
             output_norm_beta: cpu.output_norm.beta.clone(),
             output_norm_m_gamma: cpu.output_norm.m_gamma.clone(),

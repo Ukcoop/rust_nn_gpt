@@ -16,6 +16,7 @@ pkgs.mkShell {
     nixos.vulkan-headers
     nixos.vulkan-loader
     nixos.vulkan-tools
+    nixos.glslang      # For glslangValidator (GLSL to SPIR-V)
 
     # GPU-specific drivers
     nixos.mesa               # Open-source drivers (AMD/Intel)

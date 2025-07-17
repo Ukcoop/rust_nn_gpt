@@ -1,0 +1,71 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+// Parameter buffers
+layout(set = 0, binding = 0) buffer GammaBuffer { float gamma[]; };
+layout(set = 0, binding = 1) buffer BetaBuffer { float beta[]; };
+
+// Gradient buffers
+layout(set = 0, binding = 2) buffer GammaGradBuffer { float gamma_grad[]; };
+layout(set = 0, binding = 3) buffer BetaGradBuffer { float beta_grad[]; };
+
+// Adam state buffers
+layout(set = 0, binding = 4) buffer GammaMomentBuffer { float gamma_m[]; };
+layout(set = 0, binding = 5) buffer GammaVelocityBuffer { float gamma_v[]; };
+layout(set = 0, binding = 6) buffer BetaMomentBuffer { float beta_m[]; };
+layout(set = 0, binding = 7) buffer BetaVelocityBuffer { float beta_v[]; };
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint feature_dim;
+    float learning_rate;
+    float beta1;
+    float beta2;
+    float epsilon;
+    float t;  // timestep
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Update gamma
+    if (global_id < pc.feature_dim) {
+        float grad = gamma_grad[global_id];
+        
+        // Adam update for gamma
+        float m = pc.beta1 * gamma_m[global_id] + (1.0 - pc.beta1) * grad;
+        float v = pc.beta2 * gamma_v[global_id] + (1.0 - pc.beta2) * grad * grad;
+        
+        // Bias correction
+        float m_hat = m / (1.0 - pow(pc.beta1, pc.t));
+        float v_hat = v / (1.0 - pow(pc.beta2, pc.t));
+        
+        // Update parameter
+        gamma[global_id] -= pc.learning_rate * m_hat / (sqrt(v_hat) + pc.epsilon);
+        
+        // Store updated moments
+        gamma_m[global_id] = m;
+        gamma_v[global_id] = v;
+    }
+    
+    // Update beta
+    if (global_id < pc.feature_dim) {
+        float grad = beta_grad[global_id];
+        
+        // Adam update for beta
+        float m = pc.beta1 * beta_m[global_id] + (1.0 - pc.beta1) * grad;
+        float v = pc.beta2 * beta_v[global_id] + (1.0 - pc.beta2) * grad * grad;
+        
+        // Bias correction
+        float m_hat = m / (1.0 - pow(pc.beta1, pc.t));
+        float v_hat = v / (1.0 - pow(pc.beta2, pc.t));
+        
+        // Update parameter
+        beta[global_id] -= pc.learning_rate * m_hat / (sqrt(v_hat) + pc.epsilon);
+        
+        // Store updated moments
+        beta_m[global_id] = m;
+        beta_v[global_id] = v;
+    }
+} 

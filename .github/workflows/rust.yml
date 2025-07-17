@@ -16,7 +16,79 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          pkg-config \
+          cmake \
+          libssl-dev \
+          mesa-vulkan-drivers \
+          libgl1-mesa-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          build-essential
+    
+    - name: Install Vulkan SDK
+      run: |
+        wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
+        # Use Ubuntu 22.04 repository as it's more stable and compatible
+        sudo wget -qO /etc/apt/sources.list.d/lunarg-vulkan-jammy.list http://packages.lunarg.com/vulkan/lunarg-vulkan-jammy.list
+        sudo apt update
+        # Install core Vulkan packages individually to avoid dependency issues
+        sudo apt install -y \
+          vulkan-tools \
+          vulkan-validationlayers \
+          libvulkan-dev \
+          vulkan-headers \
+          vulkan-loader \
+          vulkan-utils || echo "Some Vulkan packages may not be available, continuing with available packages"
+    
+    - name: Install shader compilation tools
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y glslang-tools
+    
+    - name: Setup Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+    
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
+    
     - name: Build
       run: cargo build --verbose
+      env:
+        VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+    
     - name: Run tests
       run: cargo test --verbose
+      env:
+        VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+    
+    - name: Run test environment with Auto backend
+      run: |
+        cd test_enviorment
+        cargo run
+      env:
+        VK_INSTANCE_LAYERS: VK_LAYER_KHRONOS_validation
+    
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+    
+    - name: Run clippy
+      run: cargo clippy -- -D warnings

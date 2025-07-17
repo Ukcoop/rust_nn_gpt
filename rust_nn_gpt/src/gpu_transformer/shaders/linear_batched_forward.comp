@@ -1,0 +1,52 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+// Input buffers
+layout(set = 0, binding = 0) buffer InputBuffer { float input_data[]; };
+layout(set = 0, binding = 1) buffer WeightBuffer { float weights[]; };
+layout(set = 0, binding = 2) buffer BiasBuffer { float bias[]; };
+
+// Output buffer
+layout(set = 0, binding = 3) buffer OutputBuffer { float output_data[]; };
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint input_size;
+    uint output_size;
+    uint batch_size;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    uint total_outputs = pc.batch_size * pc.output_size;
+    
+    // Bounds check to prevent memory access violations
+    if (global_id >= total_outputs) {
+        return;
+    }
+    
+    // Calculate batch index and output index
+    uint batch_idx = global_id / pc.output_size;
+    uint output_idx = global_id % pc.output_size;
+    
+    // Additional bounds check for array access
+    if (batch_idx >= pc.batch_size || output_idx >= pc.output_size) {
+        return;
+    }
+    
+    // Compute linear transformation: output = input * weights^T + bias
+    float sum = bias[output_idx];
+    
+    for (uint input_idx = 0; input_idx < pc.input_size; input_idx++) {
+        uint input_offset = batch_idx * pc.input_size + input_idx;
+        uint weight_offset = output_idx * pc.input_size + input_idx;
+        
+        // Bounds check for input and weight access
+        if (input_offset < pc.batch_size * pc.input_size && weight_offset < pc.output_size * pc.input_size) {
+            sum += input_data[input_offset] * weights[weight_offset];
+        }
+    }
+    
+    output_data[global_id] = sum;
+} 

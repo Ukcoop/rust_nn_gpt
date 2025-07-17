@@ -1,0 +1,72 @@
+#version 450
+
+layout(local_size_x = 256) in;
+
+// Parameter buffers
+layout(set = 0, binding = 0) buffer WeightBuffer { float weights[]; };
+layout(set = 0, binding = 1) buffer BiasBuffer { float bias[]; };
+
+// Gradient buffers
+layout(set = 0, binding = 2) buffer WeightGradBuffer { float weight_grad[]; };
+layout(set = 0, binding = 3) buffer BiasGradBuffer { float bias_grad[]; };
+
+// Adam state buffers
+layout(set = 0, binding = 4) buffer WeightMomentBuffer { float weight_m[]; };
+layout(set = 0, binding = 5) buffer WeightVelocityBuffer { float weight_v[]; };
+layout(set = 0, binding = 6) buffer BiasMomentBuffer { float bias_m[]; };
+layout(set = 0, binding = 7) buffer BiasVelocityBuffer { float bias_v[]; };
+
+// Push constants
+layout(push_constant) uniform PushConstants {
+    uint weight_size;
+    uint bias_size;
+    float learning_rate;
+    float beta1;
+    float beta2;
+    float epsilon;
+    float t;  // timestep
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Update weights
+    if (global_id < pc.weight_size) {
+        float grad = weight_grad[global_id];
+        
+        // Adam update for weights
+        float m = pc.beta1 * weight_m[global_id] + (1.0 - pc.beta1) * grad;
+        float v = pc.beta2 * weight_v[global_id] + (1.0 - pc.beta2) * grad * grad;
+        
+        // Bias correction
+        float m_hat = m / (1.0 - pow(pc.beta1, pc.t));
+        float v_hat = v / (1.0 - pow(pc.beta2, pc.t));
+        
+        // Update parameter
+        weights[global_id] -= pc.learning_rate * m_hat / (sqrt(v_hat) + pc.epsilon);
+        
+        // Store updated moments
+        weight_m[global_id] = m;
+        weight_v[global_id] = v;
+    }
+    
+    // Update bias
+    if (global_id < pc.bias_size) {
+        float grad = bias_grad[global_id];
+        
+        // Adam update for bias
+        float m = pc.beta1 * bias_m[global_id] + (1.0 - pc.beta1) * grad;
+        float v = pc.beta2 * bias_v[global_id] + (1.0 - pc.beta2) * grad * grad;
+        
+        // Bias correction
+        float m_hat = m / (1.0 - pow(pc.beta1, pc.t));
+        float v_hat = v / (1.0 - pow(pc.beta2, pc.t));
+        
+        // Update parameter
+        bias[global_id] -= pc.learning_rate * m_hat / (sqrt(v_hat) + pc.epsilon);
+        
+        // Store updated moments
+        bias_m[global_id] = m;
+        bias_v[global_id] = v;
+    }
+} 

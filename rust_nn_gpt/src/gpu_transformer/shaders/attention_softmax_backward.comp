@@ -1,0 +1,61 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer GradSoftmaxBuffer { float grad_softmax[]; };
+layout(set = 0, binding = 1) buffer ScoresBuffer { float scores[]; };
+layout(set = 0, binding = 2) buffer GradScoresBuffer { float grad_scores[]; };
+
+layout(push_constant) uniform PushConstants {
+    uint batch_size;
+    uint seq_len;
+    uint num_heads;
+    uint head_dim;
+    uint embed_dim;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Calculate indices
+    uint total_attention_weights = pc.batch_size * pc.num_heads * pc.seq_len * pc.seq_len;
+    if (global_id >= total_attention_weights) return;
+    
+    uint weight_idx = global_id;
+    uint batch = weight_idx / (pc.num_heads * pc.seq_len * pc.seq_len);
+    uint remaining = weight_idx % (pc.num_heads * pc.seq_len * pc.seq_len);
+    uint head = remaining / (pc.seq_len * pc.seq_len);
+    uint i = (remaining % (pc.seq_len * pc.seq_len)) / pc.seq_len;  // query position
+    uint j = remaining % pc.seq_len;  // key position
+    
+    // Get gradient of softmax weight
+    float grad_softmax_val = grad_softmax[weight_idx];
+    
+    // Find max score for this query position to prevent overflow
+    uint query_start = batch * pc.num_heads * pc.seq_len * pc.seq_len + 
+                      head * pc.seq_len * pc.seq_len + 
+                      i * pc.seq_len;
+    float max_score = scores[query_start];
+    for (uint k = 1; k < pc.seq_len; k++) {
+        max_score = max(max_score, scores[query_start + k]);
+    }
+    
+    // Compute exp(scores - max_score) and sum
+    float exp_score = exp(scores[weight_idx] - max_score);
+    float sum_exp = 0.0;
+    for (uint k = 0; k < pc.seq_len; k++) {
+        sum_exp += exp(scores[query_start + k] - max_score);
+    }
+    
+    // Compute softmax value
+    float softmax_val = exp_score / sum_exp;
+    
+    // Compute gradient of softmax with respect to scores
+    // ∂softmax[i,j]/∂score[i,k] = softmax[i,j] * (δ[j,k] - softmax[i,k])
+    for (uint k = 0; k < pc.seq_len; k++) {
+        float delta = (j == k) ? 1.0 : 0.0;
+        float grad_score = softmax_val * (delta - (exp(scores[query_start + k] - max_score) / sum_exp));
+        atomicAdd(grad_scores[query_start + k], grad_softmax_val * grad_score);
+    }
+} 

@@ -1,0 +1,82 @@
+#version 450
+#extension GL_EXT_shader_atomic_float : require
+
+layout(local_size_x = 256) in;
+
+layout(set = 0, binding = 0) buffer GradOutputBuffer { float grad_output[]; };
+layout(set = 0, binding = 1) buffer HiddenBuffer { float hidden[]; };
+layout(set = 0, binding = 2) buffer OriginalInputBuffer { float original_input[]; };
+layout(set = 0, binding = 3) buffer Weights1Buffer { float weights1[]; };
+layout(set = 0, binding = 4) buffer Weights2Buffer { float weights2[]; };
+layout(set = 0, binding = 5) buffer GradWeights1Buffer { float grad_weights1[]; };
+layout(set = 0, binding = 6) buffer GradWeights2Buffer { float grad_weights2[]; };
+layout(set = 0, binding = 7) buffer GradBias1Buffer { float grad_bias1[]; };
+layout(set = 0, binding = 8) buffer GradBias2Buffer { float grad_bias2[]; };
+layout(set = 0, binding = 9) buffer GradOriginalInputBuffer { float grad_original_input[]; };
+
+layout(push_constant) uniform PushConstants {
+    uint batch_size;
+    uint input_dim;
+    uint hidden_dim;
+    uint output_dim;
+} pc;
+
+void main() {
+    uint global_id = gl_GlobalInvocationID.x;
+    
+    // Calculate indices for output gradients
+    uint total_output_elements = pc.batch_size * pc.output_dim;
+    if (global_id >= total_output_elements) return;
+    
+    uint output_idx = global_id;
+    uint batch = output_idx / pc.output_dim;
+    uint out_dim = output_idx % pc.output_dim;
+    
+    // Get gradient of output
+    float grad_output_val = grad_output[output_idx];
+    
+    // Backward through second linear layer (output -> hidden)
+    // ∂L/∂weights2[i,j] = ∂L/∂output[batch,i] * hidden[batch,j]
+    // ∂L/∂bias2[i] = ∂L/∂output[batch,i]
+    // ∂L/∂hidden[batch,j] = ∂L/∂output[batch,i] * weights2[i,j]
+    
+    // Compute gradients for weights2 and bias2
+    for (uint hidden_dim_idx = 0; hidden_dim_idx < pc.hidden_dim; hidden_dim_idx++) {
+        uint hidden_idx = batch * pc.hidden_dim + hidden_dim_idx;
+        uint weight2_idx = out_dim * pc.hidden_dim + hidden_dim_idx;
+        
+        // Gradient for weights2
+        atomicAdd(grad_weights2[weight2_idx], grad_output_val * hidden[hidden_idx]);
+    }
+    
+    // Gradient for bias2
+    atomicAdd(grad_bias2[out_dim], grad_output_val);
+    
+    // Compute gradients for hidden layer (for first linear layer)
+    for (uint hidden_dim_idx = 0; hidden_dim_idx < pc.hidden_dim; hidden_dim_idx++) {
+        uint hidden_idx = batch * pc.hidden_dim + hidden_dim_idx;
+        uint weight2_idx = out_dim * pc.hidden_dim + hidden_dim_idx;
+        
+        // Gradient for hidden: ∂L/∂hidden[batch,j] = ∂L/∂output[batch,i] * weights2[i,j]
+        float grad_hidden_val = grad_output_val * weights2[weight2_idx];
+        
+        // Backward through first linear layer (hidden -> input)
+        // ∂L/∂weights1[i,j] = ∂L/∂hidden[batch,i] * input[batch,j]
+        // ∂L/∂bias1[i] = ∂L/∂hidden[batch,i]
+        // ∂L/∂input[batch,j] = ∂L/∂hidden[batch,i] * weights1[i,j]
+        
+        for (uint input_dim_idx = 0; input_dim_idx < pc.input_dim; input_dim_idx++) {
+            uint input_idx = batch * pc.input_dim + input_dim_idx;
+            uint weight1_idx = hidden_dim_idx * pc.input_dim + input_dim_idx;
+            
+            // Gradient for weights1
+            atomicAdd(grad_weights1[weight1_idx], grad_hidden_val * original_input[input_idx]);
+            
+            // Gradient for original input
+            atomicAdd(grad_original_input[input_idx], grad_hidden_val * weights1[weight1_idx]);
+        }
+        
+        // Gradient for bias1
+        atomicAdd(grad_bias1[hidden_dim_idx], grad_hidden_val);
+    }
+} 
